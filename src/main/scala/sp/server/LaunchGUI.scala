@@ -86,16 +86,17 @@ class LaunchGUI(system: ActorSystem)  {
           postMessage("publish", false)
       }
 
-
-
     val route =
       api ~
       pathEndOrSingleSlash {
-        getFromFile(srcFolder + "/index.html")
+        getFromFile(srcFolder + "/index.html") ~
+        getFromResource("index.html")
       } ~
+        getFromResourceDirectory("") ~
         getFromDirectory(srcFolder) ~
         getFromDirectory(webFolder) ~
-        getFromFile(srcFolder + "/index.html")
+        getFromResource("index.html") ~
+        getFromFile(srcFolder + "/index.html") ~
         getFromFile(webFolder + "/index.html")
 
 
