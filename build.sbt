@@ -1,12 +1,12 @@
 import SPSettings._
 
 lazy val projectName = "sp-core"
-lazy val projectVersion = "0.9.4"
+lazy val projectVersion = "0.9.4.1"
 
 
 lazy val spDep = Def.setting(Seq(
-  PublishingSettings.orgNameFull %%% "sp-domain" % "0.9.4",
-  PublishingSettings.orgNameFull %%% "sp-comm" % "0.9.4"
+  PublishingSettings.orgNameFull %%% "sp-domain" % "0.9.4.1",
+  PublishingSettings.orgNameFull %%% "sp-comm" % "0.9.4.1"
 ))
 
 lazy val buildSettings = Seq(
@@ -35,4 +35,3 @@ lazy val spcore = project.in(file("."))
     "com.typesafe.akka" %% "akka-http" % "10.0.7",
     "com.typesafe.akka" %% "akka-http-testkit" % "10.0.7"
   ))
-

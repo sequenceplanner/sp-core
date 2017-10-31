@@ -80,10 +80,12 @@ object SPSettings {
     "-deprecation",
     "-feature",
     "-language:implicitConversions",
-    "-language:postfixOps"
+    "-language:postfixOps",
+    "-Ypartial-unification"
   )
 
   lazy val projectResolvers: Seq[Resolver] = Seq(
+    Resolver.file("local", file(Path.userHome.absolutePath + "/.ivy2/local"))(Resolver.ivyStylePatterns),
     "Sonatype OSS Snapshots" at "https://oss.sonatype.org/Releases",
     "Typesafe Releases" at "http://repo.typesafe.com/typesafe/releases/",
     "sonatype Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/")
@@ -144,7 +146,8 @@ object SPSettings {
     "org.scalatest" %%% "scalatest" % versions.scalaTest % "test",
     "com.lihaoyi" %%% "utest" % versions.uTest % Test,
     "com.github.julien-truffaut" %%%  "monocle-core"  % "1.4.0",
-    "com.github.julien-truffaut" %%%  "monocle-macro" % "1.4.0"
+    "com.github.julien-truffaut" %%%  "monocle-macro" % "1.4.0",
+    "co.fs2" %%% "fs2-core" % "0.10.0-M7"
   ))
 
 
