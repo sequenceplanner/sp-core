@@ -1,12 +1,12 @@
 import SPSettings._
 
 lazy val projectName = "sp-core"
-lazy val projectVersion = "0.9.4.1"
+lazy val projectVersion = "0.9.5-SNAPSHOT"
 
 
 lazy val spDep = Def.setting(Seq(
-  PublishingSettings.orgNameFull %%% "sp-domain" % "0.9.4.1",
-  PublishingSettings.orgNameFull %%% "sp-comm" % "0.9.4.1"
+  PublishingSettings.orgNameFull %%% "sp-domain" % "0.9.5-SNAPSHOT",
+  PublishingSettings.orgNameFull %%% "sp-comm" % "0.9.5-SNAPSHOT"
 ))
 
 lazy val buildSettings = Seq(
