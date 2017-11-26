@@ -72,6 +72,7 @@ class ModelMaker(modelActorMaker: APIModelMaker.CreateModel => Props)
             }
           case APIModelMaker.GetModels =>
             val updH = h.copy(from = APIModelMaker.service, to = h.from)
+            sendAnswer(updH, APISP.SPACK())
             sendAnswer(updH, APIModelMaker.ModelList(modelMap.keys.toList))
             sendAnswer(updH, APISP.SPDone())
         }
