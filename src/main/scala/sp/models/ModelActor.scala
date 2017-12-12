@@ -56,6 +56,18 @@ class ModelActor(val modelSetup: APIModelMaker.CreateModel)
             case APIModel.GetModelHistory =>
               val res = getModelHistory
               sendAnswer(updH, getModelHistory)
+            case APIModel.StructFilter(structID, query) =>
+              val struct = state.items.find(x => x.id == structID && x.isInstanceOf[Struct]).map(_.asInstanceOf[Struct])
+              val nodes = struct.map(_.items).getOrElse(Set())
+              val matchingNodes = nodes.filter(node => state.idMap(node.item).name.toLowerCase.contains(query))
+              def getParents(id: ID): Set[ID] = {
+                val parentOp = struct.flatMap(_.nodeMap(id).parent)
+                if (parentOp.isDefined) getParents(parentOp.get) + parentOp.get
+                else Set[ID]()
+              }
+              val parentsOfMatchingNodes: Set[ID] = matchingNodes.flatMap(node => getParents(node.nodeID))
+              val hiddenNodes = nodes.map(_.nodeID) -- matchingNodes.map(_.nodeID) -- parentsOfMatchingNodes
+              sendAnswer(updH, APIModel.FilteredStruct(hiddenNodes))
             case APIModel.GetItems(xs) =>
               val res = xs.flatMap(state.idMap.get)
               sendAnswer(updH, APIModel.SPItems(res.toList))
