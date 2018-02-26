@@ -1,7 +1,7 @@
 import SPSettings._
 
 lazy val projectName = "sp-core"
-lazy val projectVersion = "0.9.6-SNAPSHOT"
+lazy val projectVersion = "0.9.7-SNAPSHOT"
 
 
 lazy val spDep = Def.setting(Seq(
@@ -29,6 +29,7 @@ lazy val spcore = project.in(file("."))
   .settings(buildSettings)
   .settings(libraryDependencies ++= Seq(
     "com.typesafe.akka" %% "akka-persistence" % versions.akka,
+    "com.typesafe.akka" %% "akka-persistence-query" % versions.akka,
     "org.iq80.leveldb"            % "leveldb"          % "0.7",
     "org.fusesource.leveldbjni"   % "leveldbjni-all"   % "1.8",
     "com.typesafe.akka" %% "akka-http-core" % "10.0.7",

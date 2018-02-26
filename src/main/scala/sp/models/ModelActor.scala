@@ -1,12 +1,22 @@
 package sp.models
 
+import akka.NotUsed
 import akka.actor._
-
+import akka.persistence.query.journal.leveldb.scaladsl.LeveldbReadJournal
 import sp.domain._
 import sp.domain.Logic._
 import sp.service._
-import akka.persistence._
+import akka.persistence.{PersistentActor, _}
+import akka.persistence.query.{EventEnvelope, PersistenceQuery}
+import akka.stream.ActorMaterializer
+import akka.stream.scaladsl.{Flow, Keep}
+import play.api.libs.json.Json
 import sp.models.APIModel.SPItems
+import akka.stream.scaladsl.{Sink, Source}
+
+import scala.concurrent.Await
+import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
 
 
 object ModelActor {
@@ -14,15 +24,14 @@ object ModelActor {
 }
 
 class ModelActor(val modelSetup: APIModelMaker.CreateModel)
-  extends PersistentActor with
-    ModelLogic with
+  extends PersistentActor  with
+    ModelLogicRevert with
     ActorLogging with
     ServiceCommunicationSupport with
     MessageBussSupport
 {
   val id: ID = modelSetup.id
   override def persistenceId = id.toString
-
 
   subscribe(APIModel.topicRequest)
   triggerServiceRequestComm(serviceResp)
@@ -38,64 +47,53 @@ class ModelActor(val modelSetup: APIModelMaker.CreateModel)
       } yield {
         val updH = h.copy(from = id.toString, to = h.from)
         sendAnswer(updH, APISP.SPACK())
-          b match {
-            case k: APIModel.PutItems if h.to == id.toString =>
-              val res = putItems(k.items, k.info)
-              handleModelDiff(res, updH)
-            case k: APIModel.DeleteItems if h.to == id.toString =>
-              val res = deleteItems(k.items, k.info)
-              handleModelDiff(res, updH)
-            case k: APIModel.UpdateModelAttributes if h.to == id.toString =>
-              val res = updateAttributes(k.name, k.attributes)
-              handleModelDiff(res, updH)
-            case k: APIModel.RevertModel if h.to == id.toString =>
-            case APIModel.ExportModel =>
-              sendAnswer(updH, getTheModelToExport)
-            case APIModel.GetModelInfo =>
-              sendAnswer(updH, getModelInfo)
-            case APIModel.GetModelHistory =>
-              val res = getModelHistory
-              sendAnswer(updH, getModelHistory)
-            case APIModel.StructFilter(structID, query) =>
-              val struct = state.items.find(x => x.id == structID && x.isInstanceOf[Struct]).map(_.asInstanceOf[Struct])
-              val nodes = struct.map(_.items).getOrElse(Set())
-              val matchingNodes = nodes.filter(node => state.idMap(node.item).name.toLowerCase.contains(query))
-              def getParents(id: ID): Set[ID] = {
-                val parentOp = struct.flatMap(_.nodeMap(id).parent)
-                if (parentOp.isDefined) getParents(parentOp.get) + parentOp.get
-                else Set[ID]()
-              }
-              val parentsOfMatchingNodes: Set[ID] = matchingNodes.flatMap(node => getParents(node.nodeID))
-              val hiddenNodes = nodes.map(_.nodeID) -- matchingNodes.map(_.nodeID) -- parentsOfMatchingNodes
-              sendAnswer(updH, APIModel.FilteredStruct(hiddenNodes))
-            case APIModel.GetItems(xs) =>
-              val res = xs.flatMap(state.idMap.get)
-              sendAnswer(updH, APIModel.SPItems(res.toList))
-            case APIModel.GetItemList(from, size, filter) =>
-              val res = state.items.slice(from, from + size)
-              val appliedFilter = res.filter{item =>
-                val nameM = filter.regexName.isEmpty || item.name.toLowerCase.matches(filter.regexName)
-                val typeM = filter.regexType.isEmpty || item.getClass.getSimpleName.toLowerCase.matches(filter.regexType)
-                nameM && typeM
-              }
-              sendAnswer(updH, SPItems(appliedFilter))
-            case APIModel.GetItem(itemID) =>
-              state.idMap.get(itemID) match {
-                case Some(r) => sendAnswer(updH, APIModel.SPItem(r))
-                case None => sendAnswer(updH, APISP.SPError(s"item $itemID does not exist"))
-              }
-            case APIModel.GetStructures   =>
-              val res = state.items.filter(_.isInstanceOf[Struct])
-              sendAnswer(updH, APIModel.SPItems(res))
-            case x if h.to == id.toString =>
-              println(s"Model $id got something not implemented: ${x}")
-            case _ =>
-          }
+        b match {
+          case k: APIModel.PutItems if h.to == id.toString =>
+            val res = putItems(k.items, k.info)
+            handleModelDiff(res, updH)
+          case k: APIModel.DeleteItems if h.to == id.toString =>
+            val res = deleteItems(k.items, k.info)
+            handleModelDiff(res, updH)
+          case k: APIModel.UpdateModelAttributes if h.to == id.toString =>
+            val res = updateAttributes(k.name, k.attributes)
+            handleModelDiff(res, updH)
+          case k: APIModel.RevertModel if h.to == id.toString =>
+            val res = revertModel(k.toVersion, context.system, persistenceId) // should start at version 0
+            handleModelDiff(res, updH)
+          case APIModel.ExportModel =>
+            sendAnswer(updH, getTheModelToExport)
+          case APIModel.GetModelInfo =>
+            sendAnswer(updH, getModelInfo)
+          case APIModel.GetModelHistory =>
+            val res = getModelHistory
+            sendAnswer(updH, getModelHistory)
+          case APIModel.GetItems(xs) =>
+            val res = xs.flatMap(state.idMap.get)
+            sendAnswer(updH, APIModel.SPItems(res.toList))
+          case APIModel.GetItemList(from, size, filter) =>
+            val res = state.items.slice(from, from + size)
+            val appliedFilter = res.filter{item =>
+              val nameM = filter.regexName.isEmpty || item.name.toLowerCase.matches(filter.regexName)
+              val typeM = filter.regexType.isEmpty || item.getClass.getSimpleName.toLowerCase.matches(filter.regexType)
+              nameM && typeM
+            }
+            sendAnswer(updH, SPItems(appliedFilter))
+          case APIModel.GetItem(itemID) =>
+            state.idMap.get(itemID) match {
+              case Some(r) => sendAnswer(updH, APIModel.SPItem(r))
+              case None => sendAnswer(updH, APISP.SPError(s"item $itemID does not exist"))
+            }
+          case APIModel.GetStructures   =>
+            val res = state.items.filter(_.isInstanceOf[Struct])
+            sendAnswer(updH, APIModel.SPItems(res))
+          case x if h.to == id.toString =>
+            println(s"Model $id got something not implemented: ${x}")
+          case _ =>
+        }
 
-          sendAnswer(updH, APISP.SPDone())
+        sendAnswer(updH, APISP.SPDone())
 
       }
-
   }
 
   def serviceResp = ModelInfo.attributes.copy(
@@ -130,7 +128,7 @@ class ModelActor(val modelSetup: APIModelMaker.CreateModel)
 }
 
 
-trait ModelLogic {
+trait ModelLogicRevert {
   val id: ID
   val modelSetup: APIModelMaker.CreateModel
 
@@ -152,7 +150,7 @@ trait ModelLogic {
   }
 
   val initialHistory = SPAttributes("info"->s"Model created.")
-  var state = ModelState(1, Map(), Map(1 -> initialHistory), modelSetup.attributes, modelSetup.name)
+  var state = ModelState(0, Map(), Map(0 -> initialHistory), modelSetup.attributes, modelSetup.name)
 
 
   def putItems(items: List[IDAble], info: SPAttributes) = {
@@ -188,53 +186,100 @@ trait ModelLogic {
   }
 
 
-    def createDiffUpd(ids: List[IDAble], info: SPAttributes): Option[ModelDiff] = {
-      val upd = ids.flatMap{i =>
-        val xs = state.idMap.get(i.id)
-        if (!xs.contains(i)) Some(i)
-        else None
-      }
-      if (upd.isEmpty ) None
-      else {
-        val updInfo = if (info.values.isEmpty) SPAttributes("info"->s"updated: ${upd.map(_.name).mkString(",")}") else info
-        Some(ModelDiff(id,
-          upd,
-          List(),
-          updInfo,
-          state.version,
-          state.name,
-          state.attributes.addTimeStamp))
-      }
+  def createDiffUpd(ids: List[IDAble], info: SPAttributes): Option[ModelDiff] = {
+    val upd = ids.flatMap{i =>
+      val xs = state.idMap.get(i.id)
+      if (!xs.contains(i)) Some(i)
+      else None
     }
-
-    def createDiffDel(delete: Set[ID], info: SPAttributes): Option[ModelDiff] = {
-      val upd = updateItemsDueToDelete(delete)
-      val modelAttr = sp.domain.logic.IDAbleLogic.removeIDFromAttribute(delete, state.attributes)
-      val del = (state.idMap.filter( kv =>  delete.contains(kv._1))).values
-      if (delete.nonEmpty && del.isEmpty) None
-      else {
-        val updInfo = if (info.values.isEmpty) SPAttributes("info"->s"deleted: ${del.map(_.name).mkString(",")}") else info
-        Some(ModelDiff(id, upd, del.toList, updInfo, state.version, state.name, modelAttr.addTimeStamp))
-      }
+    if (upd.isEmpty ) None
+    else {
+      val updInfo = if (info.values.isEmpty) SPAttributes("info"->s"updated: ${upd.map(_.name).mkString(",")}") else info
+      Some(ModelDiff(id,
+        upd,
+        List(),
+        updInfo,
+        state.version,
+        state.name,
+        state.attributes.addTimeStamp))
     }
+  }
 
-    def updateState(diff: ModelDiff) = {
-      if (state.version != diff.fromVersion)
-        println(s"MODEL DIFF UPDATE is not in phase: diffState: ${diff.fromVersion}, current: ${state.version}")
+  def createDiffDel(delete: Set[ID], info: SPAttributes): Option[ModelDiff] = {
+    val upd = updateItemsDueToDelete(delete)
+    val modelAttr = sp.domain.logic.IDAbleLogic.removeIDFromAttribute(delete, state.attributes)
+    val del = (state.idMap.filter(kv =>  delete.contains(kv._1))).values
+    if (delete.nonEmpty && del.isEmpty) None
+    else {
+      val updInfo = if (info.values.isEmpty) SPAttributes("info"->s"deleted: ${del.map(_.name).mkString(",")}") else info
+      Some(ModelDiff(id, upd, del.toList, updInfo, state.version, state.name, modelAttr.addTimeStamp))
+    }
+  }
 
-      val version = state.version + 1
-      val diffMap = state.history + (version -> diff.diffInfo)
-      val idm = diff.updatedItems.map(x=> x.id -> x).toMap
+  def updateState(diff: ModelDiff) = {
+    if (state.version != diff.fromVersion)
+      println(s"MODEL DIFF UPDATE is not in phase: diffState: ${diff.fromVersion}, current: ${state.version}")
+
+    val version = state.version + 1
+    val diffMap = state.history + (version -> diff.diffInfo)
+    val idm = diff.updatedItems.map(x=> x.id -> x).toMap
+    val dels = diff.deletedItems.map(_.id).toSet
+    val allItems = (state.idMap ++ idm) filterKeys(id => !dels.contains(id))
+    state = ModelState(version, allItems, diffMap, diff.modelAttr, diff.name)
+  }
+
+
+  def updateItemsDueToDelete(dels: Set[ID]): List[IDAble] = {
+    val items = state.idMap.filterKeys(k => !dels.contains(k)).values
+    sp.domain.logic.IDAbleLogic.removeID(dels, items.toList)
+  }
+
+
+
+  def revertModel(version: Long, actorSystem: ActorSystem,persistenceId : String) : Option[ModelDiff] = {
+    val queries = PersistenceQuery(actorSystem).readJournalFor[LeveldbReadJournal](LeveldbReadJournal.Identifier)
+    val source: Source[EventEnvelope, NotUsed] = queries.currentEventsByPersistenceId(persistenceId, 0, version) // create a source containing events given by persist to the desired model version
+
+    implicit val mat = ActorMaterializer()(actorSystem)
+
+    def calculateNewState(s: ModelState, diff: ModelDiff) = { // update the new state with the modeldiff of the persist event
+      val version = s.version + 1
+      val idm = diff.updatedItems.map(x => x.id -> x).toMap
       val dels = diff.deletedItems.map(_.id).toSet
-      val allItems = (state.idMap ++ idm) filterKeys(id => !dels.contains(id))
-      state = ModelState(version, allItems, diffMap, diff.modelAttr, diff.name)
+      val allItems = (s.idMap ++ idm) filterKeys (id => !dels.contains(id))
+      val diffMap = state.history + (version -> diff.diffInfo)
+      ModelState(version, allItems, diffMap, diff.modelAttr, diff.name)
     }
 
+    val tmpState = ModelState(0, Map(), Map(0 -> initialHistory), modelSetup.attributes, modelSetup.name)
 
-    def updateItemsDueToDelete(dels: Set[ID]): List[IDAble] = {
-      val items = state.idMap.filterKeys(k => !dels.contains(k)).values
-      sp.domain.logic.IDAbleLogic.removeID(dels, items.toList)
-    }
+    val getModelState = Sink.fold[ModelState, ModelDiff](tmpState)(calculateNewState(_, _)) // the left argument of calculateNewState will be updated with the new result bc of folding
+    val toModelDiff = Flow[EventEnvelope].map(e => Json.parse(e.event.toString).as[ModelDiff]) // transforms the source to ModelDiff
+    val modelStateStream = source.via(toModelDiff).toMat(getModelState)(Keep.right)
+    val futureModelState = modelStateStream.run() // gets a future which should contain a model state created by the "sum" of ModelDiffs
 
+    var result = Option(ModelDiff(id,List(),List(),SPAttributes("info" -> ("reverted back to version " + version)), state.version, state.name, SPAttributes().addTimeStamp))
 
+    val f = futureModelState.map(newState => { // Create a new model diff by comparing new and old state
+
+      // Determine which items have changed or been deleted between current and new state
+      var del = List[IDAble]()
+      var upd = List[IDAble]()
+      newState.idMap.foreach(i => if (!(state.idMap.keySet.contains(i._1) && state.idMap(i._1) == i._2)) upd :+= i._2)
+      state.idMap.foreach(i => if (!newState.idMap.keySet.contains(i._1)) del :+= i._2)
+
+      // update the current state with the difference to achieve the new state.
+      result = Option(ModelDiff(
+        id,
+        upd,
+        del,
+        SPAttributes("info" -> ("reverted back to version " + version)),
+        state.version,
+        newState.name,
+        SPAttributes().addTimeStamp
+      ))
+    })
+    Await.ready(f, 10000 millis) // wait until future is ready
+    result
+  }
 }
