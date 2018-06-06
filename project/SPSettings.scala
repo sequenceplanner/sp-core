@@ -85,11 +85,10 @@ object SPSettings {
   )
 
   lazy val projectResolvers: Seq[Resolver] = Seq(
-    Resolver.file("local", file(Path.userHome.absolutePath + "/.ivy2/local"))(Resolver.ivyStylePatterns),
-    "Sonatype OSS Snapshots" at "https://oss.sonatype.org/Releases",
-    "Typesafe Releases" at "http://repo.typesafe.com/typesafe/releases/",
-    "sonatype Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots/")
-
+     Resolver.sonatypeRepo("public"),
+    Resolver.typesafeRepo("releases"),
+    Resolver.sonatypeRepo("snapshots")
+   )
   /** Declare global dependency versions here to avoid mismatches in multi part dependencies */
   object versions {
     val scala = "2.12.3"
