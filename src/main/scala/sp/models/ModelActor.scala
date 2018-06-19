@@ -86,6 +86,18 @@ class ModelActor(val modelSetup: APIModelMaker.CreateModel)
           case APIModel.GetStructures   =>
             val res = state.items.filter(_.isInstanceOf[Struct])
             sendAnswer(updH, APIModel.SPItems(res))
+          case APIModel.GetAllItemInfo => {
+            val info = state.items.map(i => APIModel.SPItemInfo(i.id, i.name,idableType(i)))
+            sendAnswer(updH, APIModel.SPItemInfoList(info))
+          }
+          case APIModel.GetItemInfo(ids) => {
+            val info = state.items.filter(idab => ids.contains(idab.id)).map(i => APIModel.SPItemInfo(i.id, i.name, idableType(i)))
+            sendAnswer(updH, APIModel.SPItemInfoList(info))
+          }
+          case APIModel.GetItemAttributes(ids) => {
+            val attr = ids.flatMap(state.idMap.get).map(_.attributes)
+            sendAnswer(updH, APIModel.SPAttributesList(attr))
+          }
           case x if h.to == id.toString =>
             println(s"Model $id got something not implemented: ${x}")
           case _ =>
@@ -94,6 +106,16 @@ class ModelActor(val modelSetup: APIModelMaker.CreateModel)
         sendAnswer(updH, APISP.SPDone())
 
       }
+  }
+
+  def idableType(idable:IDAble): String = idable match {
+    case Operation(_,_,_,_) => "Operation"
+    case Thing(_,_,_) => "Thing"
+    case SOPSpec(_,_,_,_) => "SOPSpec"
+    case SPSpec(_,_,_) => "SPSpec"
+    case SPResult(_,_,_) => "SPResult"
+    case SPState(_,_,_,_) => "SPState"
+    case Struct(_,_,_,_) => "Struct"
   }
 
   def serviceResp = ModelInfo.attributes.copy(
