@@ -21,6 +21,7 @@ import sp.service.ServiceHandler
 import internal.Encoding._
 import internal.Resource._
 import sp.extractors._
+import sp.models.{ModelActor, ModelMaker}
 import sp.websocket.WebSocketHandler
 
 import scala.concurrent.Future
@@ -41,6 +42,7 @@ with I18nComponents with HttpFiltersComponents {
 
   val cluster = new AkkaCluster(system)
   system.actorOf(ServiceHandler.props)
+  system.actorOf(ModelMaker.props(ModelActor.props), "modelMaker")
 
   val log = org.slf4j.LoggerFactory.getLogger(getClass.getName)
 
