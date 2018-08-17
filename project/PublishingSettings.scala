@@ -14,7 +14,7 @@ object PublishingSettings {
 
   lazy val mitLicense = Seq("MIT License" -> url("https://opensource.org/licenses/MIT"))
 
-  def githubSP(extra: String = "") = url("https://github.com/sequenceplanner/"+extra)
+  def githubSP(extra: String = "") = url("https://github.com/sequenceplanner/" + extra)
   def githubscm(extra: String = "")= "scm:git@github.com:sequenceplanner/" + extra
 
   val nexus = "https://oss.sonatype.org/"
@@ -24,11 +24,4 @@ object PublishingSettings {
     else
       Some("releases"  at nexus + "service/local/staging/deploy/maven2")
   )
-
-
-
-
-
-
 }
-
