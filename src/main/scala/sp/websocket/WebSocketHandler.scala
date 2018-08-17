@@ -5,10 +5,13 @@ import akka.actor.ActorRef
 import akka.cluster.pubsub.DistributedPubSubMediator.Publish
 import akka.stream.FlowShape
 import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Sink, Source}
+import play.api.http.websocket.TextMessage
 import play.api.mvc.WebSocket
 import sp.MessageDomain
 import sp.domain.Logic._
 import sp.domain.{SPAttributes, SPMessage}
+
+import scala.concurrent.duration._
 
 object WebSocketHandler {
   val holdFlow = Flow.fromGraph(new HoldWithInitial(MessageDomain()))
@@ -54,16 +57,13 @@ object WebSocketHandler {
         .zipWith(pubsub)((domain, msg) => Some(msg).filter(domain.isAllowedMessage))
         .flattenOption
 
-      /*
-      val toStrict = filteredMessages.map(msg => TextMessage(msg.toJson))
-      val inject = toStrict.keepAlive(2 seconds, () => TextMessage("keep-alive"))
-      */
+      val toStrict = filteredMessages.map(_.toJson)
+      val resultFlow = toStrict.keepAlive(2 seconds, () => "keep-alive")
 
-      val show: Flow[String, String, NotUsed] = filteredMessages.map(_.toJson)
+      // val debug: Flow[String, String, NotUsed] = filteredMessages.map(_.toJson)
+      // debug
 
-
-      show
-      //Flow[String].map(_ => "Got it.")
+      resultFlow
     }
   }
 

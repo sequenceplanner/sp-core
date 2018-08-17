@@ -127,12 +127,12 @@ class ServiceHandler extends Actor with MessageBussSupport {
     def --(rs: Set[ResponseData]): State = copy(responses = responses -- rs, waiting = waiting -- rs)
   }
 
-  implicit val idCommunication: PublishResponse[Id] = (h: SPHeader, b: APIServiceHandler.Response) => {
-    publish(APISP.serviceStatusRequest, SPMessage.makeJson(h, b))
+  implicit val idCommunication: PublishResponse[Id] = new PublishResponse[Id] {
+    override def respond[B: JSWrites](h: SPHeader, b: B): Unit = publish(APISP.serviceStatusRequest, SPMessage.makeJson(h, b))
   }
 
-  implicit val idRequest: PublishRequest[Id] = (h: SPHeader, b: APISP) => {
-    publish(APIServiceHandler.topicResponse, SPMessage.makeJson(h, b))
+  implicit val idRequest: PublishRequest[Id] = new PublishRequest[Id] {
+    override def request(h: SPHeader, b: APISP): Unit = publish(APIServiceHandler.topicResponse, SPMessage.makeJson(h, b))
   }
 
   implicit val idWatch: WatchService[Id] = (service: ActorRef) => context.watch(service)

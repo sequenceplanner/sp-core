@@ -9,6 +9,7 @@ import akka.pattern.ask
 import akka.stream.OverflowStrategy
 import akka.stream.scaladsl.Source
 import akka.util.Timeout
+import com.typesafe.config.{Config, ConfigException}
 import play.api.ApplicationLoader.Context
 import play.api.i18n._
 import play.api.mvc._
@@ -48,21 +49,32 @@ with I18nComponents with HttpFiltersComponents {
 
   val mediator = DistributedPubSub(system).mediator
 
-  val webFolder: String = system.settings.config getString "sp.webFolder"
-  val devFolder: String = system.settings.config getString "sp.devFolder"
-  val buildFolder: String = system.settings.config getString "sp.buildFolder"
-  val devMode: Boolean = system.settings.config getBoolean "sp.devMode"
-  val interface = system.settings.config getString "sp.interface"
-  val port = system.settings.config getInt "sp.port"
-  val srcFolder: String = if(devMode)
-    devFolder else buildFolder
+  val safeConfig = new SafeConfig(system.settings.config)
+
+  class SafeConfig(config: Config) {
+    private def safe[A](a: => A): Option[A] = {
+      try {Some(a) }
+      catch { case _: ConfigException.Missing => None }
+    }
+    def getString(path: String): Option[String] = safe { config.getString(path) }
+    def getBoolean(path: String): Option[Boolean] = safe { config.getBoolean(path) }
+    def getInt(path: String):  Option[Int] = safe { config.getInt(path) }
+  }
+
+  val webFolder = safeConfig getString "sp.webFolder"
+  val devFolder = safeConfig getString "sp.devFolder"
+  val buildFolder = safeConfig getString "sp.buildFolder"
+  val devMode = safeConfig getBoolean "sp.devMode"
+  val interface = safeConfig getString "sp.interface"
+  val port = safeConfig getInt "sp.port"
+  val srcFolder = if (devMode.contains(true)) devFolder else buildFolder
 
   LoggerConfigurator(context.environment.classLoader).foreach {
     _.configure(context.environment, context.initialConfiguration, Map.empty)
   }
 
 
-  private def subscribeClient(clientId: UUID, topic: String)(ref: ActorRef): Unit = {
+  private def clientSubscribe(clientId: UUID, topic: String)(ref: ActorRef): Unit = {
     mediator ! Subscribe(topic, ref)
     mediator ! Subscribe(clientId.toString, ref)
   }
@@ -81,14 +93,6 @@ with I18nComponents with HttpFiltersComponents {
   override val router: Router = combineRouters(mainRouter, apiRouter)
 
   def apiRouter: Router = SimpleRouter({
-    case GET(p"/") => Action { _ =>
-      sendFile(srcFolder + "/index.html")
-        .orElse(sendResource("index.html"))
-        .orElse(sendResource(srcFolder + "/index.html"))
-        .orElse(sendResource(webFolder + "/index.html"))
-        .getOrElse(Results.NotFound("Could not find the requested resource."))
-    }
-
     case GET(p"/ask") => BadRequest(Text.AskRequiresTopic)
 
     case POST(p"/ask/$topic/$service*") => handleAskTopic(topic, service)
@@ -103,9 +107,17 @@ with I18nComponents with HttpFiltersComponents {
 
 
   def mainRouter: Router = SimpleRouter({
+    case GET(p"/") => Action { _ =>
+      srcFolder.flatMap(folder => sendFile(folder + "/index.html"))
+        .orElse(sendResource("index.html"))
+        .orElse(srcFolder.flatMap(folder => sendResource(folder + "/index.html")))
+        .orElse(webFolder.flatMap(folder => sendResource(folder + "/index.html")))
+        .getOrElse(Results.NotFound("Could not find the requested resource."))
+    }
+
     case GET(p"/socket/$topic/$id") =>
       val websocket = for (id <- UUIDExtractor.fromString(id)) yield {
-        val pubsub = subscribeToBus(mockSubscribe(id, topic))
+        val pubsub = subscribeToBus(clientSubscribe(id, topic))
         WebSocketHandler.handleRequest(mediator, pubsub)
       }
 
@@ -131,7 +143,7 @@ with I18nComponents with HttpFiltersComponents {
 
   def handlePublishTopic(topic: String, service: String) = Action { req =>
     val msg = messageFromAnyContent(req.body)
-      .map(applyIf(service.nonEmpty)(appendToHeader(_, ("service", SPValue(service)))))
+      .map(applyIf(service.nonEmpty)((message: SPMessage) => appendToHeader(message, ("service", SPValue(service)))))
       .getOrElse(emptySPMessage)
 
       mediator ! Publish(topic, msg.toJson)

@@ -1,7 +1,7 @@
 package sp.effect
 
 import akka.persistence.PersistentActor
-import sequenceplanner.effect.Kinds.Id
+import sp.effect.Kinds.Id
 
 trait Persisting[F[_]] {
   def persist[A](event: A)(handler: A ⇒ Unit): F[Unit]

@@ -6,8 +6,10 @@ import xerial.sbt.Sonatype.autoImport._
 
 object SPSettings {
   object versions {
-    val scala = "2.12.3"
+    val scala = "2.12.6"
     val akka = "2.5.14"
+    val levelDbPort = "0.7"
+    val levelDbJni = "1.8"
   }
 
   val spDependencies = Seq(
@@ -21,7 +23,10 @@ object SPSettings {
     "com.typesafe.akka" %% "akka-cluster" % versions.akka,
     "com.typesafe.akka" %% "akka-cluster-tools" % versions.akka,
     "com.typesafe.akka" %% "akka-persistence" % versions.akka,
-    "com.typesafe.akka" %% "akka-persistence-query" % versions.akka
+    "com.typesafe.akka" %% "akka-persistence-query" % versions.akka,
+
+    "org.iq80.leveldb"            % "leveldb"          % versions.levelDbPort,
+    "org.fusesource.leveldbjni"   % "leveldbjni-all"   % versions.levelDbJni
   )
 
   lazy val compilerOptions = Seq(
@@ -30,6 +35,7 @@ object SPSettings {
     "-feature",
     "-language:implicitConversions",
     "-language:postfixOps",
+    "-language:higherKinds",
     "-Ypartial-unification"
   )
 
@@ -53,10 +59,5 @@ object SPSettings {
     pomIncludeRepository := { _ => false },
     sonatypeProfileName := PublishingSettings.groupIdSonatype,
     developers := ProjectSettings.developers
-  )
-
-  lazy val jsSettings = Seq(
-    testFrameworks += new TestFramework("utest.runner.Framework"),
-    addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full)
   )
 }
