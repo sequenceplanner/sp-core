@@ -1,25 +1,18 @@
 package sp.service
 
-import sp.domain._
-import Logic._
+import com.sksamuel.avro4s.SchemaFor
 import sp.domain.SchemaLogic._
+import sp.domain._
 
-
-
-
-
-object ServiceHandlerInfo {
+object ServiceHandlerAPI {
   case class ServiceHandlerRequest(request: APIServiceHandler.Request)
   case class ServiceHandlerResponse(response: APIServiceHandler.Response)
 
-  val req: com.sksamuel.avro4s.SchemaFor[ServiceHandlerRequest] = com.sksamuel.avro4s.SchemaFor[ServiceHandlerRequest]
-  val resp: com.sksamuel.avro4s.SchemaFor[ServiceHandlerResponse] = com.sksamuel.avro4s.SchemaFor[ServiceHandlerResponse]
+  val req = SchemaFor[ServiceHandlerRequest]
+  val resp = SchemaFor[ServiceHandlerResponse]
+  val k = req()
 
-  val apischema = makeMeASchema(
-    req(),
-    resp()
-  )
-
+  val apischema = makeMeASchema(req(), resp())
 
   val attributes: APISP.StatusResponse = APISP.StatusResponse(
     service = APIServiceHandler.service,

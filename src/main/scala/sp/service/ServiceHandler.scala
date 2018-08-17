@@ -1,129 +1,153 @@
 package sp.service
 
+
 import akka.actor._
+import sp.domain.APISP.StatusResponse
 import sp.domain._
-import sp.domain.Logic._
+import sp.Util.SPMessageSyntax._
+import sp.effect.Kinds.Id
+import sp.effect.Publish._
+import sp.service.ServiceHandler.WatchService
 
 
 /**
   * Created by kristofer on 2017-02-27.
+  * Edited by Jonathan Krän on 2018-08-17
   *
   * Monitors services and keeps track if they are removed or not behaving.
   *
   */
-class ServiceHandler extends Actor with ServiceHandlerLogic with MessageBussSupport {
-  case object Tick
-
-  subscribe(APIServiceHandler.topicRequest)
-  subscribe(APISP.serviceStatusResponse)
-
-  override def receive = {
-    case x: String if sender() != self =>
-      val mess = SPMessage.fromJson(x)
-
-      for {
-        m <- mess
-        h <- m.getHeaderAs[SPHeader] if h.to == APIServiceHandler.service
-        b <- m.getBodyAs[APIServiceHandler.Request]
-      } yield { b match {
-          case APIServiceHandler.GetServices =>
-            val res = services.map(_._2._1).toList
-            val updH = h.copy(from = APIServiceHandler.service, to = h.from)
-            sendAnswer(updH, APIServiceHandler.Services(res))
-          case APIServiceHandler.RemoveService(sR) =>
-            removeService(sR)
-            sendAnswer(SPHeader(from = APIServiceHandler.service), APIServiceHandler.ServiceRemoved(sR))
-        }
-      }
-
-      for {
-        m <- mess
-        h <- m.getHeaderAs[SPHeader]
-        b <- m.getBodyAs[APISP] if b.isInstanceOf[APISP.StatusResponse]
-      } yield {
-        val sR = b.asInstanceOf[APISP.StatusResponse]
-        val res = addResponse(sR, sender())
-        context.watch(sender())
-        if (res) {
-          val h = SPHeader(from = APIServiceHandler.service)
-          sendAnswer(h, APIServiceHandler.ServiceAdded(sR))
-        }
-      }
-
-    // Watching all services that are actors. Other services should send a
-    // APIServiceHandler.RemoveService
-    case Terminated(ref) =>
-      println("Removing service")
-      val res = deathWatch(ref)
-      res.foreach{kv =>
-        sendAnswer(SPHeader(from = APIServiceHandler.service), APIServiceHandler.ServiceRemoved(kv._2))
-      }
-
-    case Tick =>
-      aTick()
-      val h = SPHeader("ServiceHandler")
-      val b = APISP.StatusRequest
-      sendReq(h, b)
-  }
-
-  def sendReq(h: SPHeader, b: APISP) = publish(APISP.serviceStatusRequest, SPMessage.makeJson(h, b))
-  def sendAnswer(h: SPHeader, b: APIServiceHandler.Response) = publish(APIServiceHandler.topicResponse, SPMessage.makeJson(h, b))
-
+class ServiceHandler extends Actor with MessageBussSupport {
 
   import scala.concurrent.duration._
   import context.dispatcher
   val ticker = context.system.scheduler.schedule(5 seconds, 5 seconds, self, Tick)
 
+  subscribe(APIServiceHandler.topicRequest)
+  subscribe(APISP.serviceStatusResponse)
+
+  def onReceiveMessage(state: State): PartialFunction[Any, State] = {
+    case x: String if sender() != self =>
+      val spMessage = SPMessage.fromJson(x)
+      val s1 = spMessage
+        .getAs[SPHeader, APIServiceHandler.Request]
+        .ifHeader(_.to == APIServiceHandler.service)
+        .map((header, body) => handleServiceRequest(state, header, body))
+
+      spMessage
+        .getAs[SPHeader, APISP]
+        .flatMapBody { case r: StatusResponse => Some(r) }
+        .map((header, body) => handleStatusResponse(s1.getOrElse(state), header, body, sender()))
+        .getOrElse(state)
+
+    case Terminated(ref) => handleTermination(state, ref)
+
+    case Tick => updateResponseState(state)
+  }
+
+  private def updateResponseState[F[_]: PublishRequest](state: State): State = {
+    PublishRequest[F].request(SPHeader("ServiceHandler"), APISP.StatusRequest)
+
+    state.copy(responses = Set(), waiting = state.responses)
+  }
+
+  private def handleTermination[F[_]: PublishResponse](state: State, sender: ActorRef): State = {
+    val res = state.responsesFromSender(sender)
+    val header = SPHeader(from = APIServiceHandler.service)
+    res.map(_.inner).foreach { response =>
+      PublishResponse[F].respond(header, APIServiceHandler.ServiceRemoved(response))
+    }
+
+    state -- res
+  }
+
+  private def handleServiceRequest[F[_]: PublishResponse](state: State, header: SPHeader, body: APIServiceHandler.Request): State = {
+    import APIServiceHandler.{GetServices, RemoveService, service, Services}
+    body match {
+      case GetServices =>
+        val responses = state.responses.map(_.inner).toList
+        val newHeader = header.copy(from = service, to = header.from)
+
+        PublishResponse[F].respond(newHeader, Services(responses))
+
+        state
+
+      case RemoveService(response) =>
+        PublishResponse[F].respond(SPHeader(from = APIServiceHandler.service), APIServiceHandler.ServiceRemoved(response))
+        state.removeAPIResponse(response)
+    }
+  }
+
+  private def handleStatusResponse[F[_]: PublishResponse : WatchService](state: State, header: SPHeader, response: StatusResponse, sender: ActorRef): State = {
+    WatchService[F].watch(sender)
+    val responseData = ResponseData(response, sender)
+    val isNewResponse = !state.hasResponse(responseData)
+
+    if (isNewResponse) {
+      val header = SPHeader(from = APIServiceHandler.service)
+      val body = APIServiceHandler.ServiceAdded(response)
+
+      PublishResponse[F].respond(header, body)
+    }
+
+    state.addResponse(responseData)
+  }
+
+  private def stateReceive(state: State): Receive = onReceiveMessage(state) andThen (s => context.become(stateReceive(s)))
+  override def receive = stateReceive(State())
+
+
+  case class ResponseData(inner: StatusResponse, sender: ActorRef) {
+    def service: String = inner.service
+    def instanceID: Option[ID] = inner.instanceID
+    def instanceName: String = inner.instanceName
+    def id: String = statusResponseId(inner)
+  }
+
+  def statusResponseId(response: StatusResponse): String = {
+    def prefix(s: String): String = s + (if (s.nonEmpty) "-" else "")
+    val instance = response.instanceID.map(_.toString).getOrElse("")
+
+    response.service + prefix(response.instanceName) + prefix(instance)
+  }
+
+  case class State(responses: Set[ResponseData] = Set(), waiting: Set[ResponseData] = Set()) {
+    def hasResponse(response: ResponseData): Boolean = responses.contains(response)
+    def addResponse(response: ResponseData) = {
+      copy(responses = responses + response, waiting = waiting.filterNot(_.id == response.id))
+    }
+    def removeAPIResponse(response: StatusResponse): State = {
+      val id = statusResponseId(response)
+      copy(responses = responses.filterNot(_.id == id), waiting = waiting.filterNot(_.id == id))
+    }
+
+    def responsesFromSender(sender: ActorRef): Set[ResponseData] = responses.filter(_.sender == sender)
+
+    def -(response: ResponseData): State = copy(responses = responses - response, waiting = waiting - response)
+    def --(rs: Set[ResponseData]): State = copy(responses = responses -- rs, waiting = waiting -- rs)
+  }
+
+  implicit val idCommunication: PublishResponse[Id] = (h: SPHeader, b: APIServiceHandler.Response) => {
+    publish(APISP.serviceStatusRequest, SPMessage.makeJson(h, b))
+  }
+
+  implicit val idRequest: PublishRequest[Id] = (h: SPHeader, b: APISP) => {
+    publish(APIServiceHandler.topicResponse, SPMessage.makeJson(h, b))
+  }
+
+  implicit val idWatch: WatchService[Id] = (service: ActorRef) => context.watch(service)
 }
 
 object ServiceHandler {
-  def props = Props(classOf[ServiceHandler])
-}
+  case object Tick
 
-
-trait ServiceHandlerLogic {
-  var services: Map[String, (APISP.StatusResponse, ActorRef)] = Map()
-  var waitingResponse: Map[String, APISP.StatusResponse] = Map()
-
-
-  def aTick() = {
-    val noAnswer = waitingResponse.map{kv =>
-      services -= kv._1
-      kv
-    }
-    waitingResponse = services.map(kv => kv._1 -> kv._2._1)
-    noAnswer
+  trait WatchService[F[_]] {
+    def watch(service: ActorRef): F[ActorRef]
   }
 
-  def addResponse(resp: APISP.StatusResponse, sender: ActorRef) = {
-    val re = services.filter(kv => kv._2._2 == sender).map(kv => kv._1 -> kv._2._1)
-    val n = if (re.isEmpty) createName(resp) else re.head._1
-
-    val res = !services.contains(n)
-    waitingResponse -= n
-    services += n -> (resp, sender)
-    res
+  object WatchService {
+    def apply[F[_]](implicit F: WatchService[F]) = F
   }
 
-  def deathWatch(actor: ActorRef) = {
-    val re = services.filter(kv => kv._2._2 == actor).map(kv => kv._1 -> kv._2._1)
-    services = services.filterNot(kv => re.contains(kv._1))
-    waitingResponse = waitingResponse.filterNot(kv => re.contains(kv._1))
-    re
-  }
-
-  def removeService(sR: APISP.StatusResponse): Unit = {
-    val n = createName(sR)
-    services = services - n
-    waitingResponse = waitingResponse - n
-  }
-
-
-  def createName(x: APISP.StatusResponse ) = {
-    val n = if (x.instanceName.isEmpty) "" else "-" +x.instanceName
-    val id = if (x.instanceID.isEmpty) n else "-" +x.instanceID.get.toString
-    x.service + id
-  }
-
-
+  def props = Props(new ServiceHandler())
 }
