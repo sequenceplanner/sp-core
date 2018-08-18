@@ -8,7 +8,7 @@ import scala.util.Try
 
 
 
-object ModelMakerInfo {
+object ModelMakerAPI {
   case class ModelMakerRequest(request: APIModelMaker.Request)
   case class ModelMakerResponse(response: APIModelMaker.Response)
 
