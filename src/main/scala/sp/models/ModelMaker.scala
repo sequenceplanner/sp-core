@@ -1,6 +1,5 @@
 package sp.models
 
-import sp.domain._
 import akka.actor._
 import akka.persistence.{PersistentActor, RecoveryCompleted}
 import sp.domain._
@@ -11,24 +10,21 @@ import sp.service.{MessageBussSupport, ServiceCommunicationSupport}
 import sp.Text.ModelMakerText._
 import sp.effect._
 import sp.Util.SPMessageSyntax._
-import sp.effect.Kinds.Id
 
-
-class ModelMaker(modelActorMaker: CreateModel => Props) extends
+class ModelMaker(modelActorMaker: CreateModel => Props)(implicit effects: Effects) extends
   PersistentActor with
   ActorLogging with
   ServiceCommunicationSupport with
   MessageBussSupport {
   override def persistenceId = "modelMaker"
 
-  val instance = this
+  implicit val implicitSelf = this
 
   val selfHeader = APIModelMaker.service
 
   val instanceID = ID.newID
   val serviceInfo = ModelMakerAPI.attributes.copy(instanceID = Some(instanceID))
 
-  subscribe(APIModelMaker.topicRequest)
   triggerServiceRequestComm(serviceInfo)
 
   // TODO: ModelMaker needs to check if there are already
@@ -39,71 +35,48 @@ class ModelMaker(modelActorMaker: CreateModel => Props) extends
   val Done = APISP.SPDone()
   def Error(msg: String) = APISP.SPError(msg)
 
-  /**
-    *
-    * @param actors Currently active model actors
-    * @param restorePlaybacks stores messages coming from the actor being restored
-    */
-  private case class State(actors: Map[ID, ActorRef] = Map(), restorePlaybacks: Map[ID, CreateModel] = Map()) { self =>
-    def actorForModel(request: CreateModel): State = {
-      copy(actors = actors + (request.id -> context.actorOf(modelActorMaker(request))))
-    }
-
-    def deleteModel(modelId: ID): State = {
-      actors.get(modelId).foreach(_ ! PoisonPill)
-      copy(actors = actors - modelId)
-    }
-
-    def stageRestore(request: CreateModel): State = copy(restorePlaybacks = restorePlaybacks + (request.id -> request))
-    def unstageRestore(modelId: ID): State = copy(restorePlaybacks = restorePlaybacks - modelId)
-
-    def commitPlaybacks: State = restorePlaybacks.foldLeft(self) { case (s, (_, model)) => s.actorForModel(model) }
-  }
-
-  private def onCreateModel[F[_]: PublishResponse: Persist]
-  (state: State, request: CreateModel, header: SPHeader, rawMessage: String)(onSuccess: => Unit): Unit = {
-    import PublishResponse._
-
+  private def onCreateModel(state: State, request: CreateModel, header: SPHeader, rawMessage: String)(onSuccess: => Unit): Unit = {
+    import PublishResponse.toJsValue
     val requestExists = state.actors.contains(request.id)
 
-    if (requestExists) respond(header, Error(CannotCreateModel(request.id.toString)))
+    if (requestExists) effects.respond(header, Error(CannotCreateModel(request.id.toString)))
     else {
-      respond(header, Acknowledge)
-      Persist[F].persist(rawMessage) { _ =>
+      effects.respond(header, Acknowledge)
+      effects.persist(rawMessage) { _ =>
         onSuccess
 
         val created = APIModelMaker.ModelCreated(request.name, request.attributes, request.id)
-        respondN(header, created, Done)
+        effects.respondN(header, created, Done)
       }
     }
   }
 
-  private def onDeleteModel[F[_]: PublishResponse: Persist]
-  (state: State, req: DeleteModel, header: SPHeader, rawMessage: String)(onSuccess: => Unit): Unit = {
-    import PublishResponse._
+  private def onDeleteModel(state: State, req: DeleteModel, header: SPHeader, rawMessage: String)(onSuccess: => Unit): Unit = {
+    import PublishResponse.toJsValue
 
-    if (!state.actors.contains(req.id)) respond(header, Error(CannotDeleteModel(req.id.toString)))
+    if (!state.actors.contains(req.id)) effects.respond(header, Error(CannotDeleteModel(req.id.toString)))
     else {
-      respond(header, Acknowledge)
-      Persist[F].persist(rawMessage) { _ =>
+      effects.respond(header, Acknowledge)
+      effects.persist(rawMessage) { _ =>
         onSuccess
 
         val res = APIModelMaker.ModelDeleted(req.id)
-        respondN(header, res, Done)
+        effects.respondN(header, res, Done)
       }
 
     }
   }
 
-  private def onGetModels[F[_]: PublishResponse](state: State, header: SPHeader): Unit = {
-    import PublishResponse._
+  private def onGetModels(state: State, header: SPHeader): Unit = {
+    import PublishResponse.toJsValue
     val body = ModelList(state.actors.keys.toList)
 
-    respondN(header, Acknowledge, body, Done)
+    effects.respondN(header, Acknowledge, body, Done)
   }
 
   private def onReceiveMessage(state: State): PartialFunction[Any, State] = {
     case data: String if sender() != self =>
+
       val isValidHeader = (h: SPHeader) => h.to == instanceID.toString || h.to == APIModelMaker.service
 
       SPMessage.fromJson(data)
@@ -135,7 +108,7 @@ class ModelMaker(modelActorMaker: CreateModel => Props) extends
 
   private def handleCommand(state: State): Receive = onReceiveMessage(state) andThen (s => context.become(handleCommand(s)))
 
-  def receiveCommand: Receive = handleCommand(State())
+  def receiveCommand: Receive = handleCommand(State(requestToActor = modelActorMaker, actorContext = context))
 
   def receiveRecover = {
     case data: String =>
@@ -147,11 +120,6 @@ class ModelMaker(modelActorMaker: CreateModel => Props) extends
 
     case RecoveryCompleted => self ! RecoveryFinished
   }
-
-  private implicit val persistEffect: Persist[Id] = Persist.forActor(this)
-  private implicit val publishEffect: PublishResponse[Id] = new PublishResponse[Id] {
-    override def respond[B: JSWrites](h: SPHeader, b: B): Unit = publish(selfHeader, SPMessage.makeJson(h, b))
-  }
 }
 
 object ModelMaker {
@@ -162,5 +130,52 @@ object ModelMaker {
   case class ModelCreationRestored(model: CreateModel)
   case class ModelDeletionRestored(modelId: ID)
 
-  def props(maker: APIModelMaker.CreateModel => Props) = Props(classOf[ModelMaker], maker)
+  type Effects = PublishResponse[ModelMaker] with Persist[ModelMaker]
+
+
+  private val defaultEffect = new PublishResponse[ModelMaker]
+    with Persist[ModelMaker]
+    with BusSupport {
+    override def respond[B: JSWrites](h: SPHeader, b: B)(implicit actorRef: ModelMaker): Unit = {
+      if (!busCreated) {
+        initBus(actorRef)
+      }
+
+      publishOnBus(APIModelMaker.service, SPMessage.makeJson(h, b))
+    }
+
+    override def persist[A](event: A)(handler: A => Unit)(implicit ref: ModelMaker): Unit = ref.persist(event)(handler)
+
+    /**
+      * A list of topics that the bus will subscribe to.
+      */
+    override def busSubscriptionTopics = Seq(APIModelMaker.topicRequest)
+  }
+
+  /**
+    *
+    * @param actors Currently active model actors
+    * @param restorePlaybacks stores messages coming from the actor being restored
+    */
+  case class State(
+                    actors: Map[ID, ActorRef] = Map(),
+                    restorePlaybacks: Map[ID, CreateModel] = Map(),
+                    requestToActor: CreateModel => Props,
+                    actorContext: ActorContext) { self =>
+    def actorForModel(request: CreateModel): State = {
+      copy(actors = actors + (request.id -> actorContext.actorOf(requestToActor(request))))
+    }
+
+    def deleteModel(modelId: ID): State = {
+      actors.get(modelId).foreach(_ ! PoisonPill)
+      copy(actors = actors - modelId)
+    }
+
+    def stageRestore(request: CreateModel): State = copy(restorePlaybacks = restorePlaybacks + (request.id -> request))
+    def unstageRestore(modelId: ID): State = copy(restorePlaybacks = restorePlaybacks - modelId)
+
+    def commitPlaybacks: State = restorePlaybacks.foldLeft(self) { case (s, (_, model)) => s.actorForModel(model) }
+  }
+
+  def props(maker: APIModelMaker.CreateModel => Props)(implicit effects: Effects = defaultEffect) = Props(new ModelMaker(maker)(defaultEffect))
 }

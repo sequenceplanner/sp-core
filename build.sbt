@@ -16,7 +16,7 @@ lazy val root = (project in file("."))
   .settings(
     name := projectName,
     version := projectVersion,
-    libraryDependencies ++= spDependencies ++ dependencies,
+    libraryDependencies ++= spDependencies ++ dependencies ++ testDependencies,
     scmInfo := Some(ScmInfo(
       PublishingSettings.githubSP(projectName),
       PublishingSettings.githubscm(projectName)

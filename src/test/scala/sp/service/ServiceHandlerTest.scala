@@ -1,161 +1,106 @@
-//package sp.service
-//
-//import akka.actor._
-//import akka.testkit._
-//import com.typesafe.config._
-//import org.scalatest._
-//import sp.domain.Logic._
-//import sp.domain._
-//import sp.messages._
-//import Pickles._
-//import akka.cluster.pubsub.DistributedPubSub
-//import akka.cluster.pubsub.DistributedPubSubMediator.{Publish, Put, Subscribe}
-//import scala.concurrent.duration._
-//
-//
-///**
-//  * Created by kristofer on 2016-05-04.
-//  */
-//class ServiceHandlerTest(_system: ActorSystem) extends TestKit(_system) with ImplicitSender
-//  with FreeSpecLike with Matchers with BeforeAndAfterAll {
-//
-//  def this() = this(ActorSystem("SP", ConfigFactory.parseString(
-//    """
-//      |akka.persistence.journal.plugin = "akka.persistence.journal.inmem"
-//      |akka.persistence.snapshot-store.plugin = "akka.persistence.snapshot-store.local"
-//      |akka.persistence.snapshot-store.local.dir = "target/snapshotstest/"
-//      |akka.loglevel = "INFO"
-//      |akka.actor.provider = "akka.cluster.ClusterActorRefProvider"
-//      |akka.remote.netty.tcp.hostname="127.0.0.1"
-//      |akka.remote.netty.hostname.port=2551
-//      |akka.cluster.seed-nodes=["akka.tcp://SP@127.0.0.1:2551"]
-//    """.stripMargin)))
-//  val mediator = DistributedPubSub(system).mediator
-//
-//  val p = TestProbe()
-//  val e = TestProbe()
-//  //val sh = system.actorOf(OperatorService.props(p.ref), "OperatorService")
-//
-//  override def beforeAll: Unit = {
-//
-//  }
-//
-//  override def afterAll {
-//    TestKit.shutdownActorSystem(system)
-//  }
-//
-//  import sp.service.{APIServiceHandler => api}
-//
-//
-//  "service handler logic" - {
-//    "should handle services coming and going" in {
-//      val l = new ServiceHandlerLogic{}
-//
-//      val s1 = APISP.StatusResponse(
-//      service = "s1",
-//      instanceID = ID.newID,
-//        instanceName = "s1_1",
-//        tags = List("test", "1")
-//      )
-//
-//      val s2 = APISP.StatusResponse(
-//        service = "s2",
-//        instanceID = ID.newID,
-//        instanceName = "s2_1",
-//        tags = List("test", "2")
-//      )
-//
-//      val ff = l.addResponse(s1, p.ref)
-//      assert(ff)
-//      val fff = l.addResponse(s1, p.ref)
-//      assert(!fff)
-//
-//
-//      l.addResponse(s2, e.ref)
-//      println(l.services.map(_._1))
-//
-//      assert(l.services.size == 2)
-//      assert(l.waitingResponse.isEmpty)
-//
-//      val res1 = l.aTick()
-//      println(l.services.map(_._1))
-//
-//      assert(l.services.size == 2)
-//      assert(l.waitingResponse.size == 2)
-//      assert(res1.isEmpty)
-//
-//
-//      l.addResponse(s1, p.ref)
-//
-//      val res2 = l.aTick()
-//      println(l.services.map(_._1))
-//
-//      assert(l.services.size == 1)
-//      assert(l.services.size == 1)
-//      assert(l.waitingResponse.size == 1)
-//      assert(res2.size == 1)
-//
-//      l.addResponse(s2, e.ref)
-//      println(l.services.map(_._1))
-//
-//      val res3 = l.deathWatch(p.ref)
-//      println(l.services.map(_._1))
-//
-//      assert(l.services.size == 1)
-//      assert(l.services.size == 1)
-//      assert(l.waitingResponse.size == 0)
-//      assert(res2.size == 1)
-//
-//    }
-//
-//
-//    }
-//
-//
-//
-////  "Ability Handler " - {
-////    val handlerID = ID.newID
-////    val vdID = ID.new
-////    val rID = ID.newID
-////    val h = SPHeader(from = "test", to = handlerID.toString, reply = "test")
-////
-////    "create" in {
-////      var mh: ActorRef = system.actorOf(AbilityHandler.props("kalle", handlerID, vdID))
-////      val probeAnswers = TestProbe()
-////
-////      mediator ! Subscribe("answers", probeAnswers.ref)
-////      mediator ! Subscribe("events", probeAnswers.ref)
-////      mediator ! Subscribe("services", probeAnswers.ref)
-////      mediator ! Subscribe("spevents", probeAnswers.ref)
-////
-////      val rID = ID.newID
-////      val stateUpd = SPMessage.makeJson(h.copy(from = vdID.toString, reply = vdID), vdAPI.StateEvent("r", rID, Map(v1.id -> 1)))
-////      val mess = SPMessage.makeJson(h.copy(reqID = rID), api.SetUpAbility(ability))
-////      mediator ! Publish("events", stateUpd)
-////      Thread.sleep(100)
-////      mediator ! Publish("services", mess)
-////
-////      val start = SPMessage.makeJson(h, api.StartAbility(ability.id))
-////      mediator ! Publish("services", start)
-////
-////      mediator ! Publish("events", SPMessage.makeJson(h.copy(from = vdID.toString, reply = vdID), vdAPI.StateEvent("r", rID, Map(v1.id -> 2))))
-////      mediator ! Publish("events", SPMessage.makeJson(h.copy(from = vdID.toString, reply = vdID), vdAPI.StateEvent("r", rID, Map(v1.id -> 3))))
-////      mediator ! Publish("events", SPMessage.makeJson(h.copy(from = vdID.toString, reply = vdID), vdAPI.StateEvent("r", rID, Map(v1.id -> 4))))
-////      mediator ! Publish("events", SPMessage.makeJson(h.copy(from = vdID.toString, reply = vdID), vdAPI.StateEvent("r", rID, Map(v1.id -> 1))))
-////
-////
-////      probeAnswers.fishForMessage(1 second){
-////        case x =>
-////          println("-------: ")
-////          println(x)
-////          println("-------: ")
-////
-////          false
-////      }
-////    }
-////
-////
-////  }
-//
-//
-//}
+package sp.service
+
+import akka.actor.ActorSystem
+import akka.testkit.{TestKit, TestProbe}
+import org.scalatest._
+import sp.domain.APISP.StatusResponse
+import sp.domain.{SPHeader, SPMessage}
+import sp.service.APIServiceHandler.GetServices
+import sp.service.ServiceHandler.ResponseData
+
+class ServiceHandlerTest extends TestKit(ActorSystem("ServiceHandlerTest")) with FreeSpecLike with BeforeAndAfterAll {
+  import ServiceHandler.State
+
+  override def afterAll: Unit = {
+    TestKit.shutdownActorSystem(system)
+  }
+
+  val serviceName = "test-service"
+
+  val state = State()
+
+  "State" - {
+    "addResponse works" in {
+      val sender = TestProbe()
+      val r1 = ResponseData(StatusResponse(serviceName), sender.ref)
+
+      val s2 = state.copy(waiting = Set(r1))
+
+      assert(s2.waiting.contains(r1), "Equality checks are unsound")
+
+      assert(!s2.hasResponse(r1), "hasResponse should only return true if the response is in 'responses', not in 'waiting'")
+
+
+      val s3 = s2.addResponse(r1)
+      assert(s3.hasResponse(r1))
+
+      // Adding a response should remove it from "waiting"
+      assert(!s3.waiting.contains(r1))
+    }
+
+    "removeAPIResponse removes responses" in {
+      val sender = TestProbe()
+      val statusResponse = StatusResponse(serviceName + "2")
+      val r1 = ResponseData(StatusResponse(serviceName), sender.ref)
+      val r2 = ResponseData(statusResponse, sender.ref)
+
+      val s2 = state.copy(responses = Set(r1), waiting = Set(r1, r2))
+      assert(!s2.removeAPIResponse(statusResponse).waiting.contains(r2), "removal using StatusResponse should remove the response from waiting")
+      assert(!s2.hasResponse(r2), "removal using StatusResponse should remove the response from responses")
+    }
+
+    "finds responses from particular sender" in {
+      val sender1 = TestProbe()
+      val sender2 = TestProbe()
+      val r1 = ResponseData(StatusResponse(serviceName), sender1.ref)
+      val r2 = ResponseData(StatusResponse(serviceName + "2"), sender1.ref)
+      val r3 = ResponseData(StatusResponse(serviceName), sender2.ref)
+
+      val s2 = state.copy(responses = Set(r1, r2, r3))
+      assert(s2.responsesFromSender(sender1.ref) == Set(r1, r2), "Did not find correct responses given a particular sender")
+
+    }
+
+    "minus (-) removes from both responses and waiting" in {
+      val sender = TestProbe()
+      val r1 = ResponseData(StatusResponse(serviceName), sender.ref)
+
+      val s1 = state.copy(responses = Set(r1), waiting = Set(r1))
+      assert((s1 - r1) == State())
+    }
+  }
+
+  "ResponseId" - {
+    "Correctly generates an ID for a response" in {
+      val response = StatusResponse(serviceName)
+      val response2 = StatusResponse(serviceName, instanceName = "theInstance")
+
+      assert(ServiceHandler.statusResponseId(response) == response.service)
+      assert(ServiceHandler.statusResponseId(response2) == s"${response.service}-${response2.instanceName}")
+    }
+  }
+
+  "ParseServiceMessage" - {
+    "ParseServiceMessage methods are correct" in {
+      val parse = new ServiceHandler.ParseServiceMessage {}
+      val goodStatusResponse = StatusResponse(serviceName)
+      val msg = SPMessage.make(SPHeader(), goodStatusResponse)
+
+      assert(parse.parseApiMessage(msg).nonEmpty, "parseApiMessage should correctly parse a valid SPMessage")
+
+      val goodRequest = SPMessage.make(SPHeader(to = APIServiceHandler.service), GetServices)
+      val badRequest = SPMessage.make(SPHeader(), goodRequest)
+
+      assert(parse.parseRequest(goodRequest).nonEmpty, "parseRequest should correctly parse a valid SPMessage")
+      assert(parse.parseRequest(badRequest).isEmpty, "parseRequest should only parse messages that is sent to it. (The SPHeader needs to=\"ServiceHandler\")")
+    }
+  }
+
+  "ServiceHandler Actor" - {
+    ""
+    val serviceHandler = system.actorOf(ServiceHandler.props)
+
+
+  }
+
+}

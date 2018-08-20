@@ -10,6 +10,7 @@ object SPSettings {
     val akka = "2.5.14"
     val levelDbPort = "0.7"
     val levelDbJni = "1.8"
+    val scalaTest = "3.0.5"
   }
 
   val spDependencies = Seq(
@@ -27,6 +28,11 @@ object SPSettings {
 
     "org.iq80.leveldb"            % "leveldb"          % versions.levelDbPort,
     "org.fusesource.leveldbjni"   % "leveldbjni-all"   % versions.levelDbJni
+  )
+
+  val testDependencies = Seq(
+    "org.scalactic" %% "scalactic" % versions.scalaTest,
+    "org.scalatest" %% "scalatest" % versions.scalaTest % "test"
   )
 
   lazy val compilerOptions = Seq(

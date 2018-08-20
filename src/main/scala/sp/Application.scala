@@ -42,7 +42,7 @@ with I18nComponents with HttpFiltersComponents {
   implicit val implicitContext = context
 
   val cluster = new AkkaCluster(system)
-  system.actorOf(ServiceHandler.props)
+  system.actorOf(ServiceHandler.props())
   system.actorOf(ModelMaker.props(ModelActor.props), "modelMaker")
 
   val log = org.slf4j.LoggerFactory.getLogger(getClass.getName)
