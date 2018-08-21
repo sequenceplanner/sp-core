@@ -83,7 +83,6 @@ class ServiceHandlerTest extends TestKit(ActorSystem("ServiceHandlerTest")) with
   val state = State()
 
   "State" - {
-    /*
     "addResponse works" in {
       val sender = TestProbe()
       val r1 = ResponseData(StatusResponse(serviceName), sender.ref)
@@ -158,7 +157,6 @@ class ServiceHandlerTest extends TestKit(ActorSystem("ServiceHandlerTest")) with
       assert(parse.parseRequest(goodRequest).nonEmpty, "parseRequest should correctly parse a valid SPMessage")
       assert(parse.parseRequest(badRequest).isEmpty, "parseRequest should only parse messages that is sent to it. (The SPHeader needs to=\"ServiceHandler\")")
     }
-  }*/
   }
 
   "ServiceHandler Actor" - {
@@ -170,7 +168,7 @@ class ServiceHandlerTest extends TestKit(ActorSystem("ServiceHandlerTest")) with
       override def watch(service: ActorRef)(implicit handler: SH) = service
     }
 
-    /*
+
     "Correctly adds and reports responses" in {
       val effectProbe = TestProbe("effectProbe")
       val serviceActor = TestProbe("serviceActor")
@@ -199,7 +197,7 @@ class ServiceHandlerTest extends TestKit(ActorSystem("ServiceHandlerTest")) with
 
       messenger.testTickRequest()
     }
-    */
+
 
     "Handles termination properly" in {
       val effectProbe = TestProbe()
@@ -224,10 +222,4 @@ class ServiceHandlerTest extends TestKit(ActorSystem("ServiceHandlerTest")) with
     }
 
   }
-/*
-  class ServiceProbe extends Actor {
-    def ask(actor: ActorRef, message: Any) = actor.ask ? message
-    override def receive = ???
-  }
-*/
 }
