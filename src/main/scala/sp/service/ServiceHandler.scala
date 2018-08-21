@@ -8,7 +8,7 @@ import sp.Util.SPMessageSyntax._
 import sp.domain
 import sp.effect.BusSupport
 import sp.effect.Publish._
-import sp.service.ServiceHandler.ParseServiceMessage
+import sp.service.ServiceHandler.{ParseServiceMessage, TerminatedSender}
 
 
 /**
@@ -34,26 +34,31 @@ class ServiceHandler()(implicit val effects: ServiceHandler.Effects) extends Act
   }
 
   def onReceiveMessage(state: State): PartialFunction[Any, State] = {
-    case x: String if sender() != self =>
+    case x: String if sender != self =>
       val message = SPMessage.fromJson(x)
+
       def onRequest(m: SPMessage, s: State) = parseRequest(m).map { case (header, body) =>
         handleServiceRequest(s, header, body)
       }
 
       def onStatusResponse(m: SPMessage, s: State) = parseApiMessage(m).map { case (header, body) =>
-        handleStatusResponse(s, header, body, sender())
+        handleStatusResponse(s, header, body, sender)
       }
 
       val newState = message.map(msg => combineMessageHandlers(onRequest, onStatusResponse)(msg, state))
       newState.getOrElse(state)
 
-    case Terminated(ref) => handleTermination(state, ref)
+    case Terminated(ref) =>
+      self ! TerminatedSender(ref)
+      state
 
-    case Tick => updateResponseState(state)
+    case TerminatedSender(ref) => handleTermination(state, ref)
+
+    case ServiceHandler.Tick => updateResponseState(state)
   }
 
   private def updateResponseState(state: State): State = {
-    effects.request(SPHeader("ServiceHandler"), APISP.StatusRequest)
+    effects.request(SPHeader(from = APIServiceHandler.service), APISP.StatusRequest)
 
     state.copy(responses = Set(), waiting = state.responses)
   }
@@ -70,18 +75,22 @@ class ServiceHandler()(implicit val effects: ServiceHandler.Effects) extends Act
 
   private def handleServiceRequest(state: State, header: SPHeader, body: APIServiceHandler.Request): State = {
     import APIServiceHandler.{GetServices, RemoveService, service, Services}
+    val newHeader = header.copy(from = service, to = header.from)
+
     body match {
       case GetServices =>
         val responses = state.responses.map(_.inner).toList
-        val newHeader = header.copy(from = service, to = header.from)
 
         effects.respond(newHeader, Services(responses))
 
         state
 
       case RemoveService(response) =>
-        effects.respond(SPHeader(from = APIServiceHandler.service), APIServiceHandler.ServiceRemoved(response))
+        effects.respond(newHeader, APIServiceHandler.ServiceRemoved(response))
         state.removeAPIResponse(response)
+
+      case x =>
+        throw new MatchError(s"$x was not captured by match.")
     }
   }
 
@@ -91,41 +100,50 @@ class ServiceHandler()(implicit val effects: ServiceHandler.Effects) extends Act
     val isNewResponse = !state.hasResponse(responseData)
 
     if (isNewResponse) {
-      val header = SPHeader(from = APIServiceHandler.service)
+      val newHeader = header.copy(from = APIServiceHandler.service, to = header.from)
       val body = APIServiceHandler.ServiceAdded(response)
 
-      effects.respond(header, body)
+      effects.respond(newHeader, body)
     }
 
     state.addResponse(responseData)
   }
 
-  private def stateReceive(state: State): Receive = onReceiveMessage(state) andThen (s => context.become(stateReceive(s)))
-  override def receive = stateReceive(State())
+  private def stateReceive(state: State): Receive = {
+    onReceiveMessage(state) andThen (s => context.become(stateReceive(s)))
+  }
+  override def receive = {
+    stateReceive(State())
+  }
 }
 
 object ServiceHandler {
   case object Tick
 
+  /**
+    * Since akka.Terminated cannot be instantiated artificially, this is used to test termination of a sender
+    */
+  case class TerminatedSender(sender: ActorRef)
+
   trait WatchService[C] {
     def watch(service: ActorRef)(implicit context: C): ActorRef
   }
 
-  object WatchService {
-    def apply[F[_], C](implicit context: C, F: WatchService[C]) = F
-  }
-
+  // TODO 08/21/2018 "waiting" is not used. Should it be, and if so for what?
   case class State(responses: Set[ResponseData] = Set(), waiting: Set[ResponseData] = Set()) {
     def hasResponse(response: ResponseData): Boolean = responses.contains(response)
     def addResponse(response: ResponseData) = {
-      copy(responses = responses + response, waiting = waiting.filterNot(_.id == response.id))
+      val res = copy(responses = responses + response, waiting = waiting.filterNot(_.id == response.id))
+      res
     }
     def removeAPIResponse(response: StatusResponse): State = {
       val id = statusResponseId(response)
       copy(responses = responses.filterNot(_.id == id), waiting = waiting.filterNot(_.id == id))
     }
 
-    def responsesFromSender(sender: ActorRef): Set[ResponseData] = responses.filter(_.sender == sender)
+    def responsesFromSender(sender: ActorRef): Set[ResponseData] = {
+      responses.filter(_.sender.path == sender.path)
+    }
 
     def -(response: ResponseData): State = copy(responses = responses - response, waiting = waiting - response)
     def --(rs: Set[ResponseData]): State = copy(responses = responses -- rs, waiting = waiting -- rs)
@@ -169,10 +187,6 @@ object ServiceHandler {
 
   type Effects = PublishResponse[ServiceHandler] with PublishRequest[ServiceHandler] with WatchService[ServiceHandler]
 
-  def props[F[_]](effect: Effects = defaultEffect) = {
-    implicit val eff = effect
-    Props(new ServiceHandler())
-  }
 
   trait ParseServiceMessage {
     def parseRequest(message: SPMessage): Option[(SPHeader, APIServiceHandler.Request)] = {
@@ -182,5 +196,10 @@ object ServiceHandler {
     def parseApiMessage(message: SPMessage): Option[(SPHeader, StatusResponse)] = {
       message.getAs[SPHeader, StatusResponse].flatMapBody { case r: StatusResponse => Some(r) }
     }
+  }
+
+  def props[F[_]](effect: Effects = defaultEffect) = {
+    implicit val eff = effect
+    Props(new ServiceHandler())
   }
 }
