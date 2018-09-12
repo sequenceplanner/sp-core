@@ -2,72 +2,66 @@ package spgui.widgets.itemtree
 
 import japgolly.scalajs.react._
 import japgolly.scalajs.react.vdom.html_<^._
-
-import scalacss.ScalaCssReact._
 import spgui.{SPWidget, SPWidgetBase}
-import spgui.components.DragAndDrop.{ DataOnDrag, OnDataDrop }
+import spgui.components.DragAndDrop.{DataOnDrag, OnDataDrop}
 import spgui.communication.BackendCommunication
-import spgui.widgets.itemeditor.{API_ItemServiceDummy => api}
-import spgui.circuit.{ SPGUICircuit, UpdateGlobalState, GlobalState }
+import spgui.circuit.{GlobalState, SPGUICircuit, UpdateGlobalState}
 import sp.domain._
 
 import scalajs.js
-import js.Dynamic.{literal => l}
-import js.JSON
 import js.annotation.JSExportTopLevel
 import java.util.UUID
 
+import diode.react.ModelProxy
+
 
 object ItemExplorer {
+  import sp.models.{APIModel => api}
 
   // TODO temporary way of setting currentModel, currentModel-field will be moved to global state attributes
   @JSExportTopLevel("setCurrentModel")
-  def setCurrentModel(modelIDString: String) = {
+  def setCurrentModel(modelIDString: String): Unit = {
     val id = UUID.fromString(modelIDString)
     val action = UpdateGlobalState(GlobalState(currentModel = Some(id)))
     SPGUICircuit.dispatch(action)
   }
 
-  import sp.models.{APIModel => mapi}
 
-  def extractMResponse(m: SPMessage) = for {
-    h <- m.getHeaderAs[SPHeader]
-    b <- m.getBodyAs[mapi.Response]
-  } yield (h, b)
+  def extractMResponse(message: SPMessage) = for {
+    h <- message.getHeaderAs[SPHeader]
+    b <- message.getBodyAs[api.Response]
+  } yield b
 
-  def makeMess(h: SPHeader, b: mapi.Request) = SPMessage.make[SPHeader, mapi.Request](h, b)
+  def makeSPMessage(h: SPHeader, b: api.Request) = SPMessage.make[SPHeader, api.Request](h, b)
 
   case class ItemExplorerState(items: List[IDAble], modelIDFieldString: String = "modelID")
 
-  class ItemExplorerBackend($: BackendScope[SPWidgetBase, ItemExplorerState]) {
+  case class Props(base: SPWidgetBase, proxy: ModelProxy[GlobalState])
 
-    def handleMess(mess: SPMessage): Unit = {
-      extractMResponse(mess).map{ case (h, b) =>
-        val res = b match {
-          case tm@mapi.SPItems(items) => $.modState(s => s.copy(items = items))
-          case x => Callback.empty
-        }
-        res.runNow()
-      }
+  class ItemExplorerBackend($: BackendScope[Props, ItemExplorerState]) {
+    val wsObs = BackendCommunication.getWebSocketStatusObserver(onWebSocketStatusChange, api.topicResponse)
+    val topicHandler = BackendCommunication.getMessageObserver(onMessage, api.topicResponse)
+
+    def onMessage(message: SPMessage): Unit = extractMResponse(message).foreach {
+      case api.SPItems(items) => $.modState(_.copy(items = items)).runNow()
+      case _ =>
     }
 
-    def sendToModel(model: ID, mess: mapi.Request): Callback = {
-      val h = SPHeader(from = "ItemExplorer", to = model.toString,
-        reply = SPValue("ItemExplorer"))
-      val json = makeMess(h, mess)
-      BackendCommunication.publish(json, mapi.topicRequest)
-      Callback.empty
+    def sendToModel(model: ID, mess: api.Request): Callback = CallbackTo[Unit] {
+      val header = SPHeader(from = "ItemExplorer", to = model.toString, reply = SPValue("ItemExplorer"))
+      val json = makeSPMessage(header, mess)
+      BackendCommunication.publish(json, api.topicRequest)
     }
 
-    val topic = mapi.topicResponse
-    val wsObs = BackendCommunication.getWebSocketStatusObserver(  mess => {
-      if (mess) $.props.map(p => p.frontEndState.currentModel.foreach(m => sendToModel(m, mapi.GetItemList()))).runNow()
-    }, topic)
-    val topicHandler = BackendCommunication.getMessageObserver(handleMess, topic)
+    def onWebSocketStatusChange(isOpen: Boolean): Unit = if (isOpen) {
+      $.props
+        .map(_.proxy.value.currentModel.foreach(modelId => sendToModel(modelId, api.GetItemList())))
+        .runNow()
+    }
 
-    def render(p: SPWidgetBase, s: ItemExplorerState) =
+    def render(p: Props, s: ItemExplorerState) =
       <.div(
-        if (p.frontEndState.currentModel.isDefined) renderItems(s.items) else renderIfNoModel,
+        if (p.proxy.value.currentModel.isDefined) renderItems(s.items) else renderIfNoModel,
         OnDataDrop(str => Callback.log("dropped " + str + " on item explorer tree"))
       )
 
@@ -85,13 +79,15 @@ object ItemExplorer {
       )
   }
 
-  val itemExplorerComponent = ScalaComponent.builder[SPWidgetBase]("ItemExplorer")
+  val connect = SPGUICircuit.connect(_.globalState)
+
+
+  val itemExplorerComponent = ScalaComponent.builder[Props]("ItemExplorer")
     .initialState(ItemExplorerState(Nil))
     .renderBackend[ItemExplorerBackend]
     .build
 
-  def apply() = SPWidget { spwb =>
-    //println(spwb.frontEndState)
-    itemExplorerComponent(spwb)
+  def apply() = SPWidget { base =>
+    connect(x => itemExplorerComponent(Props(base, x)))
   }
 }

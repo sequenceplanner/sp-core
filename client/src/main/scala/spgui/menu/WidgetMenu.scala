@@ -1,36 +1,39 @@
 package spgui.menu
 
 import japgolly.scalajs.react._
-import japgolly.scalajs.react.vdom.html_<^._
-import japgolly.scalajs.react.vdom.all.aria
-import scalacss.ScalaCssReact._
-
-import spgui.circuit.{SPGUICircuit, AddWidget}
+import spgui.circuit.{AddWidget, SPGUICircuit}
 import spgui.WidgetList
-import spgui.components.{ Icon, SPNavbarElements }
+import spgui.components.SPNavbarElements
 
 object WidgetMenu {
   case class State(filterText: String = "")
 
   class Backend($: BackendScope[Unit, State]) {
-    def addW(name: String, w: Int, h: Int): Callback =
-      Callback(SPGUICircuit.dispatch(AddWidget(name, w, h)))
+    def addWidget(name: String, w: Int, h: Int): Callback = Callback {
+      println(s"addWidget: $name")
+      SPGUICircuit.dispatch(AddWidget(name, w, h))
+    }
 
-    def render(s: State) =
-      SPNavbarElements.dropdown(
-        "New widget",
-        SPNavbarElements.TextBox(
-          s.filterText,
-          "Find widget...",
-          (t: String) => { $.setState(State(filterText = t)) }
-        ) :: WidgetList.list.collect{
-          case e if (e._1.toLowerCase.contains(s.filterText.toLowerCase))=>
-            SPNavbarElements.dropdownElement(
-              e._1,
-              addW(e._1, e._3, e._4)
-            )
-        }
+    def render(state: State) = {
+      def capturedByFilter(s: String) = {
+        println("Captured by filter")
+        s.toLowerCase.contains(state.filterText.toLowerCase)
+      }
+      val widgets = WidgetList.list.collect { case widget if capturedByFilter(widget.name) =>
+        SPNavbarElements.dropdownElement(widget.name,
+          addWidget(widget.name, widget.width, widget.height)
+        )
+      }
+
+      val filterBox = SPNavbarElements.TextBox(
+        state.filterText,
+        "Find widget...",
+        s => $.modState(_.copy(filterText = s))
       )
+
+      SPNavbarElements.dropdown("New widget", filterBox :: widgets)
+    }
+
   }
 
   private val component = ScalaComponent.builder[Unit]("WidgetMenu")

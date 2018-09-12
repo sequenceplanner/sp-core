@@ -71,8 +71,9 @@ object ItemExplorer {
 
   def emptyDir() = Directory("New Directory", UUID.randomUUID().toString, List())
 
-  def apply() = SPWidget(spwb => TreeView(
-                           SPItemsToRootDirectory(SampleSPItems()),
+  def apply() = SPWidget(_ => TreeView(
+                           // SPItemsToRootDirectory(SampleSPItems()),
+                           SPItemsToRootDirectory(Seq()),
                            ("Directory", () => emptyDir()) ::
                              Nil,
                            item => GetItemIcon(item),

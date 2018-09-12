@@ -1,12 +1,13 @@
 package spgui
 
 import japgolly.scalajs.react.vdom.html_<^.VdomElement
-import spgui._
+import spgui.WidgetList.Widget
+
 
 /**
   *  All these widgets runnable without a backend
   */
-object FrontendOnlyLoadingWidgets {
+object FrontendOnlyWidgets {
 
   type Widget = (String, SPWidgetBase => VdomElement, Int, Int)
 
@@ -32,7 +33,8 @@ object FrontendOnlyLoadingWidgets {
     )
 
 
-  def loadWidgets: Unit = {
-    WidgetList.addWidgets(sp)
+  def loadWidgets(): Unit = {
+    val widgets = sp.map { case (name, render, w, h) => Widget(name, render, w, h) }
+    WidgetList.addWidgets(widgets)
   }
 }

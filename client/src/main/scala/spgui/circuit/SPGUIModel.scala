@@ -6,9 +6,10 @@ import java.util.UUID
 import japgolly.scalajs.react.Callback
 import japgolly.scalajs.react.vdom.VdomElement
 import sp.domain.SPValue
-import spgui.modal.{ModalResult}
+import spgui.modal.ModalResult
 import spgui.theming.Theming.Theme
 import sp.domain.StructNode
+import spgui.dashboard.ReactGridLayout.LayoutElement
 
 // state
 case class SPGUIModel(
@@ -66,6 +67,8 @@ case object CloseAllWidgets extends Action
 case class RecallDashboardPreset(preset: DashboardPreset) extends Action
 case class UpdateLayout(id: UUID, newLayout: WidgetLayout) extends Action
 case class SetLayout(layout: Map[UUID, WidgetLayout]) extends Action
+case class LayoutsChanged(layouts: Seq[LayoutElement]) extends Action
+
 
 case class AddDashboardPreset(name: String) extends Action
 case class RemoveDashboardPreset(name: String) extends Action

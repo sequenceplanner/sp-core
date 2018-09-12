@@ -1,3 +1,5 @@
+import java.nio.file.{CopyOption, Files, StandardCopyOption}
+
 import SPSettings._
 
 lazy val projectName = "sp-core"
@@ -31,11 +33,28 @@ lazy val shared = crossProject.crossType(CrossType.Pure).in(file("shared"))
 lazy val sharedJvm = shared.jvm
 lazy val sharedJs = shared.js
 
+lazy val copyClientResources = taskKey[Unit]("copyResources")
+
 lazy val server = project.in(file("server"))
   .settings(defaultBuildSettings)
   .settings(buildSettings)
   .dependsOn(sharedJvm)
-  .settings(libraryDependencies ++= SPSettings.commDependencies.value)
+  .settings(
+    libraryDependencies ++= SPSettings.commDependencies.value,
+    copyClientResources := {
+      val base = baseDirectory.value
+      def copyToResources(file: File) = Files.copy(file.toPath, new File(base, "src/main/resources/" + file.name).toPath, StandardCopyOption.REPLACE_EXISTING)
+      // Resources from client
+      new File(base.getParentFile, "client/src/main/resources/")
+        .listFiles()
+        .foreach(copyToResources)
+
+      // jsdeps & client code
+      copyToResources(new File(base.getParentFile, "client/target/scala-2.12/sp-core-fastopt.js"))
+      copyToResources(new File(base.getParentFile, "client/target/scala-2.12/sp-core-jsdeps.js"))
+      Unit
+    }
+  )
   .settings(libraryDependencies ++= Seq(
     "com.typesafe.akka" %% "akka-persistence" % versions.akka,
     "com.typesafe.akka" %% "akka-persistence-query" % versions.akka,

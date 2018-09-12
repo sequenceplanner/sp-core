@@ -139,7 +139,7 @@ class OpenWidgetsHandler[M](modelRW: ModelRW[M, OpenWidgets]) extends ActionHand
         .getOrElse(value.xs)
       updated(OpenWidgets(updW))
     }
-    case SetLayout(newLayout) => {
+    case SetLayout(newLayout) =>
       val updW = OpenWidgets(value.xs.map(x =>
         (
           x._1,
@@ -149,8 +149,20 @@ class OpenWidgetsHandler[M](modelRW: ModelRW[M, OpenWidgets]) extends ActionHand
         )
       ))
       updated(updW)
+
+    case LayoutsChanged(layouts) =>
+      val widgets = value.xs
+      widgets.foreach(x => println(x._2.layout.y))
+      val updatedWidgets = widgets.map { case (id, widget) =>
+        val updatedWidget = layouts.find(_.key == id.toString).map(l => widget.copy(
+          layout = widget.layout.copy(x = l.x, y = l.y, w = l.w, h = l.h)
+        )).getOrElse(widget)
+
+        id -> updatedWidget
+      }
+
+      updated(OpenWidgets(updatedWidgets))
     }
-  }
 }
 
 class GlobalStateHandler[M](modelRW: ModelRW[M, GlobalState]) extends ActionHandler(modelRW) {

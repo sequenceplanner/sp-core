@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Sequence Planner</title>
+  </head>
+  <body>
+    <section id="spgui-root"></section>
+    <script type="text/javascript" src="./bundle.min.js"></script>
+
+    <!--<script type="text/javascript" src="js/target/scala-2.12/spgui-jsdeps.min.js"></script>-->
+    <script type="text/javascript" src="./sp-core-jsdeps.js"></script>
+
+    <!--<script type="text/javascript" src="js/target/scala-2.12/spgui-opt.js"></script>-->
+    <script type="text/javascript" src="./sp-core-fastopt.js"></script>
+
+    <script type="text/javascript" src="/workbench.js"></script>
+
+    <script type="text/javascript">
+      spgui.FrontendOnlyMain().main();
+    </script>
+  </body>
+</html>

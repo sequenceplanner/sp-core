@@ -12,7 +12,7 @@ object FrontendOnlyMain extends App {
 
   @JSExport
   def main(): Unit = {
-    FrontendOnlyLoadingWidgets.loadWidgets
+    FrontendOnlyWidgets.loadWidgets()
     Layout().renderIntoDOM(document.getElementById("spgui-root"))
   }
 }

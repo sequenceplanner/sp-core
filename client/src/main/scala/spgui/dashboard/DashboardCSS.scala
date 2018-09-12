@@ -93,5 +93,9 @@ object DashboardCSS extends SPStyleSheet {
     )
   )
 
+  val mainContainer = style(
+    position.relative
+  )
+
   this.addToDocument()
 }

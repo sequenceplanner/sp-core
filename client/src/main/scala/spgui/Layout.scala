@@ -2,29 +2,25 @@ package spgui
 
 import japgolly.scalajs.react._
 import japgolly.scalajs.react.vdom.html_<^._
-import spgui.circuit.SPGUICircuit
+import spgui.GlobalCSS
+import spgui.circuit.{SPGUICircuit, SPGUIModel}
 import spgui.menu.SPMenu
 import spgui.dashboard.Dashboard
 import spgui.dragging.Dragging
 import spgui.modal.Modal
 
 object Layout {
-  val widgetsConnection = SPGUICircuit.connect(x => (x.openWidgets.xs, x.globalState))
-  val menuConnection = SPGUICircuit.connect(x => (x.settings))
-  val draggingConnection = SPGUICircuit.connect(x => (x.draggingState))
-  val modalConnection = SPGUICircuit.connect(x => (x.modalState))
+  def connect[A <: AnyRef, B <: VdomElement](f: SPGUIModel => A) = SPGUICircuit.connect(f)
 
   val component = ScalaComponent.builder[Unit]("Layout")
     .render(_ =>
       <.div(
         ^.className := GlobalCSS.layout.htmlClass,
-        modalConnection(Modal(_)),
-
-        menuConnection(SPMenu(_)),
-        widgetsConnection(Dashboard(_)),
-
+        connect(_.modalState)(Modal(_)),
+        connect(_.settings)(SPMenu(_)),
+        connect(s => s.openWidgets.xs.values.toList)(Dashboard(_)),
         Dragging.mouseMoveCapture,
-        draggingConnection(Dragging(_))
+        connect(_.draggingState)(Dragging(_))
       )
     )
     .build

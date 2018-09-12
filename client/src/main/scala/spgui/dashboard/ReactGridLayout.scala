@@ -1,20 +1,26 @@
 package spgui.dashboard
 
 import japgolly.scalajs.react._
+
 import scala.scalajs.js
-import js.annotation.{ JSName, JSGlobal }
+import js.annotation.{JSImport, JSName}
 import japgolly.scalajs.react.vdom.html_<^.VdomArray
-import java.util.UUID
 
 object ReactGridLayout {
 
+  @JSImport("react-grid-layout", JSImport.Default)
   @js.native
-  @JSGlobal("ReactGridLayout")
-  object ReactGridLayoutJS extends js.Object
+  object GridLayout extends js.Object
+
+  @JSImport("react-grid-layout", "Responsive")
+  @js.native
+  object Responsive extends js.Object
+
 
   @js.native
   trait LayoutElement extends js.Object {
-    val i: String = js.native
+    @JSName("i")
+    val key: String = js.native
     val x: Int = js.native
     val y: Int = js.native
     val w: Int = js.native
@@ -30,20 +36,21 @@ object ReactGridLayout {
   // atm there is no perfect way to facade "options" kind of jsObjects, but this is one way
   object LayoutElement {
     def apply(
-      i: String,
-      x: Int,
-      y: Int,
-      w: Int,
-      h: Int,
-      minW: Int = 2,
-      maxW: Int = Integer.MAX_VALUE,
-      minH: Int = 1,
-      maxH: Int = Integer.MAX_VALUE,
-      static: Boolean = false,
-      isDraggable: Boolean = true,
-      isResizable: Boolean = true
-    ) = js.Dynamic.literal(
-      i = i,
+               key: String,
+               x: Int,
+               y: Int,
+               w: Int,
+               h: Int,
+               minW: Int = 2,
+               maxW: Int = Integer.MAX_VALUE,
+               minH: Int = 1,
+               maxH: Int = Integer.MAX_VALUE,
+               static: Boolean = false,
+               isDraggable: Boolean = true,
+               isResizable: Boolean = true
+             ): LayoutElement = js.Dynamic.literal(
+      i = key,
+      key = key,
       x = x,
       y = y,
       w = w,
@@ -55,9 +62,8 @@ object ReactGridLayout {
       static = static,
       isDraggable = isDraggable,
       isResizable = isResizable
-    )
+    ).asInstanceOf[LayoutElement]
   }
-  type Layout = js.Array[LayoutElement]
 
   @js.native
   trait Props extends js.Object {
@@ -67,37 +73,37 @@ object ReactGridLayout {
     var draggableCancel: String = js.native
     var draggableHandle: String = js.native
     var verticalCompact: Boolean = js.native
-    var layout: Layout = js.native
+    var layout: js.Array[LayoutElement] = js.native
     var margin: js.Array[Int] = js.native
     var containerPadding: js.Array[Int] = js.native
     var rowHeight: Int = js.native
     var isDraggable: Boolean = js.native
     var isResizable: Boolean = js.native
     var useCSSTransforms: Boolean = js.native
-    var onLayoutChange: js.Function1[Layout, Unit] = js.native
-    var onResize: js.Function1[Layout, Unit] = js.native
-    var onResizeStart: js.Function1[Layout, Unit] = js.native
+    var onLayoutChange: js.Function1[js.Array[LayoutElement], Unit] = js.native
+    var onResize: js.Function1[js.Array[LayoutElement], Unit] = js.native
+    var onResizeStart: js.Function1[js.Array[LayoutElement], Unit] = js.native
   }
 
   def apply(
-    width: Int,
-    autoSize: Boolean = true,
-    cols: Int = 12,
-    draggableCancel: String = "",
-    draggableHandle: String = "",
-    verticalCompact: Boolean = true,
-    layout: js.Array[LayoutElement] = js.Array(),
-    margin: js.Array[Int] = js.Array(3,3),
-    containerPadding: js.Array[Int] = js.Array(3,3),
-    rowHeight: Int = 50,
-    isDraggable: Boolean = true,
-    isResizable: Boolean = true,
-    useCSSTransforms: Boolean = true,
-    onLayoutChange: Layout => Unit = x => Unit,
-    onResize: Layout => Unit = x => Unit,
-    onResizeStart: Layout => Unit = x => Unit,
-    children: VdomArray
-  ) = {
+             width: Int,
+             autoSize: Boolean = true,
+             cols: Int = 12,
+             draggableCancel: String = "",
+             draggableHandle: String = "",
+             verticalCompact: Boolean = true,
+             layout: js.Array[LayoutElement] = js.Array(),
+             margin: js.Array[Int] = js.Array(3, 3),
+             containerPadding: js.Array[Int] = js.Array(3, 3),
+             rowHeight: Int = 50,
+             isDraggable: Boolean = true,
+             isResizable: Boolean = true,
+             useCSSTransforms: Boolean = true,
+             onLayoutChange: js.Array[LayoutElement] => Unit = x => Unit,
+             onResize: js.Array[LayoutElement] => Unit = x => Unit,
+             onResizeStart: js.Array[LayoutElement] => Unit = x => Unit,
+             children: VdomArray
+           ) = {
     val p = (new js.Object).asInstanceOf[Props]
     p.width = width
     p.autoSize = autoSize
@@ -116,7 +122,7 @@ object ReactGridLayout {
     p.onResize = onResize
     p.onResizeStart = onResizeStart
 
-    val component = JsComponent[Props, Children.Varargs, Null](ReactGridLayoutJS)
+    val component = JsComponent[Props, Children.Varargs, Null](GridLayout)
     component(p)(children)
   }
 }
