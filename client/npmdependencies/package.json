@@ -4,7 +4,8 @@
     "build": "NODE_ENV=production webpack"
   },
   "dependencies": {
-    "bootstrap": "~3.3.7",
+    "bootstrap": "~4.1.3",
+    "popper.js": "1.14.4",
     "chart.js": "~2.5.0",
     "paths-js": "~0.4.5",
     "font-awesome": "~4.7.0",
